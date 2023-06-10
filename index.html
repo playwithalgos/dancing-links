@@ -6,24 +6,26 @@
     <script src="https://unpkg.com/@hpcc-js/wasm@0.3.11/dist/index.min.js"></script>
     <script src="https://unpkg.com/d3-graphviz@3.0.5/build/d3-graphviz.js"></script>
     <div id="graph" style="text-align: center;"></div>
+    <button id="download">Download</button>
     <script>
 
 
-        const FAKEPOSITIONX = 8;
-        const FAKEPOSITIONY = 7;
+        const FAKEPOSITIONX = 7;
+        const FAKEPOSITIONY = 6;
         const SEP = 1;
         const ESEP = 0.2;
 
         function dotPos(l, c) {
-            
+
             const x = SEP * c;
             const y = -SEP * l;
             return `${x},${y}!`;
         }
 
         class Node {
-            constructor(name, label, l, c) {
+            constructor(name, value, label, l, c) {
                 this.name = name;
+                this.value = value;
                 this.label = label;
                 this.l = l;
                 this.c = c;
@@ -31,7 +33,7 @@
 
             dotAddNode(dotLines) {
                 const s = 0;// this.cover ? 0.05 * (2+Math.cos(this.l / 8)) : 0;
-                dotLines.push(`${this.name} [shape="square", pad=1.3,width=0.2,height=0.2,label="${this.label}", style="filled",fillcolor=${this.cover ? '"#ffffee80"' : '"#ffffee"'}, color=${this.cover ? "lightgray" : "black"}, pos="${dotPos(this.l + s, this.c + s)}"];`);
+                dotLines.push(`${this.name} [shape="square", pad=1.3,width=0.2,height=0.2,label="${this.label}${this.value != undefined ? ' : ' + this.value : ''}", style="filled",fillcolor=${this.cover ? '"#ffffee80"' : '"#ffffee"'}, color=${this.cover ? "lightgray" : "black"}, pos="${dotPos(this.l + s, this.c + s)}"];`);
             }
 
 
@@ -84,9 +86,9 @@
 
         }
 
-function styleEdge(fromA) {
-    return fromA.cover ? 'style="dashed"' : '';
-}
+        function styleEdge(fromA) {
+            return fromA.cover ? 'style="dashed"' : '';
+        }
 
         class DancingList {
             constructor(M) {
@@ -96,14 +98,18 @@ function styleEdge(fromA) {
                 for (let c = 0; c < M[0].length; c++)
                     for (let l = 0; l < M.length; l++)
                         if (M[l][c])
-                            M[l][c] = new Node(`${l}${c}`, "", l, c);
+                            M[l][c] = new Node(`${l}${c}`, undefined, "", l, c);
 
-                this.head = new Node("h", "h", -1, -1);
+                this.head = new Node("h", undefined, "h", -1, -1);
 
 
                 let previousNode = this.head;
                 for (let c = 0; c < M[0].length; c++) {
-                    const columnNode = new Node("c" + c, c + 1, -1, c);
+                    let count = 0;
+                    for (let l = 0; l < M.length; l++)
+                        if (M[l][c])
+                            count++;
+                    const columnNode = new Node("c" + c, count, c + 1, -1, c);
                     this.columnNodes[c] = columnNode;
                     previousNode.right = columnNode;
                     columnNode.left = previousNode;
@@ -205,6 +211,7 @@ function styleEdge(fromA) {
                         j.down.up = j.up;
                         j.up.down = j.down;
                         j.cover = true;
+                        this.columnNodes[j.c].value--;
                     }
 
                 }
@@ -220,6 +227,8 @@ function styleEdge(fromA) {
                         j.down.up = j;
                         j.up.down = j;
                         j.cover = false;
+                        this.columnNodes[j.c].value++;
+
                     }
                 }
 
@@ -290,7 +299,22 @@ function styleEdge(fromA) {
         }
 
 
+        document.getElementById("download").onclick = () => {
+            download("dancinglinks.svg", graph.children[0].outerHTML);
+        }
 
 
+        function download(filename, text) {
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+
+            element.style.display = 'none';
+            document.body.appendChild(element);
+
+            element.click();
+
+            document.body.removeChild(element);
+        }
 
     </script>
