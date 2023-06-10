@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<body>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script src="https://unpkg.com/@hpcc-js/wasm@0.3.11/dist/index.min.js"></script>
+    <script src="https://unpkg.com/d3-graphviz@3.0.5/build/d3-graphviz.js"></script>
+    <div id="graph" style="text-align: center;"></div>
+    <script>
+
+
+        const FAKEPOSITIONX = 8;
+        const FAKEPOSITIONY = 7;
+        const SEP = 1;
+        const ESEP = 0.2;
+
+        function dotPos(l, c) {
+            
+            const x = SEP * c;
+            const y = -SEP * l;
+            return `${x},${y}!`;
+        }
+
+        class Node {
+            constructor(name, label, l, c) {
+                this.name = name;
+                this.label = label;
+                this.l = l;
+                this.c = c;
+            }
+
+            dotAddNode(dotLines) {
+                const s = 0;// this.cover ? 0.05 * (2+Math.cos(this.l / 8)) : 0;
+                dotLines.push(`${this.name} [shape="square", pad=1.3,width=0.2,height=0.2,label="${this.label}", style="filled",fillcolor=${this.cover ? '"#ffffee80"' : '"#ffffee"'}, color=${this.cover ? "lightgray" : "black"}, pos="${dotPos(this.l + s, this.c + s)}"];`);
+            }
+
+
+
+            dotAddEdges(dotLines) {
+                if (this.left)
+                    this.addEdgeLeft(dotLines, this, this.left);
+
+                if (this.right)
+                    this.addEdgeRight(dotLines, this, this.right);
+
+                if (this.up)
+                    this.addEdgeUp(dotLines, this, this.up);
+
+                if (this.down)
+                    this.addEdgeDown(dotLines, this, this.down);
+            }
+
+
+            addFakeNode(dotLines, l, c) {
+                const name = "fake" + (l + 100) + (c + 100);
+                dotLines.push(`${name} [label="", pos="${dotPos(l, c)}" shape="none"];`);
+                return name;
+            }
+
+            addEdgeLeft(dotLines, A, B) {
+                let Bname = B.name;
+                if (A.c < B.c)
+                    Bname = this.addFakeNode(dotLines, A.l, -2);
+                dotLines.push(`${A.name}:w -> ${Bname} [color="red:none",${styleEdge(A)}];`);
+            }
+            addEdgeRight(dotLines, A, B) {
+                let Bname = B.name;
+                if (A.c > B.c)
+                    Bname = this.addFakeNode(dotLines, A.l, +FAKEPOSITIONX);
+                dotLines.push(`${A.name}:e -> ${Bname} [color="green:none",${styleEdge(A)}];`);
+            }
+            addEdgeUp(dotLines, A, B) {
+                let Bname = B.name;
+                if (A.l < B.l)
+                    Bname = this.addFakeNode(dotLines, -2, A.c);
+                dotLines.push(`${A.name}:n -> ${Bname} [color="orange:none",${styleEdge(A)}];`);
+            }
+            addEdgeDown(dotLines, A, B) {
+                let Bname = B.name;
+                if (A.l > B.l)
+                    Bname = this.addFakeNode(dotLines, +FAKEPOSITIONY, A.c);
+                dotLines.push(`${A.name}:s -> ${Bname} [color="blue:none",${styleEdge(A)}];`);
+            }
+
+        }
+
+function styleEdge(fromA) {
+    return fromA.cover ? 'style="dashed"' : '';
+}
+
+        class DancingList {
+            constructor(M) {
+                this.M = M;
+                this.columnNodes = [];
+
+                for (let c = 0; c < M[0].length; c++)
+                    for (let l = 0; l < M.length; l++)
+                        if (M[l][c])
+                            M[l][c] = new Node(`${l}${c}`, "", l, c);
+
+                this.head = new Node("h", "h", -1, -1);
+
+
+                let previousNode = this.head;
+                for (let c = 0; c < M[0].length; c++) {
+                    const columnNode = new Node("c" + c, c + 1, -1, c);
+                    this.columnNodes[c] = columnNode;
+                    previousNode.right = columnNode;
+                    columnNode.left = previousNode;
+                    previousNode = columnNode;
+                }
+                previousNode.right = this.head;
+                this.head.left = previousNode;
+
+                let columnNode = this.head;
+                for (let c = 0; c < M[0].length; c++) {
+                    console.log(columnNode)
+                    columnNode = columnNode.right;
+                    previousNode = columnNode;
+                    for (let l = 0; l < M.length; l++) {
+                        if (M[l][c]) {
+                            M[l][c].up = previousNode;
+                            previousNode.down = M[l][c];
+                            previousNode = M[l][c];
+                        }
+                    }
+                    previousNode.down = columnNode;
+                    columnNode.up = previousNode;
+                }
+
+
+
+                for (let l = 0; l < M.length; l++) {
+                    let firstNode = undefined;
+                    let previousNode = undefined;
+                    for (let c = 0; c < M[0].length; c++)
+                        if (M[l][c]) {
+                            if (firstNode == undefined) firstNode = M[l][c];
+                            if (previousNode) {
+                                previousNode.right = M[l][c];
+                            }
+                            M[l][c].left = previousNode;
+                            previousNode = M[l][c];
+                        }
+                    previousNode.right = firstNode;
+                    firstNode.left = previousNode;
+                }
+            }
+
+
+            toDot() {
+                const dotLines = [
+                    'digraph G  {',
+                    `graph [layout = neato, splines="true", esep=${ESEP},overlap="false"]`,
+                    'edge [    arrowhead="vee"  ];',
+
+                ];
+
+                /** nodes **/
+                this.head.dotAddNode(dotLines);
+                for (let c = 0; c < this.M[0].length; c++) {
+                    this.columnNodes[c].dotAddNode(dotLines);
+                }
+
+
+                for (let c = 0; c < this.M[0].length; c++) {
+                    for (let l = 0; l < this.M.length; l++) {
+                        if (this.M[l][c])
+                            this.M[l][c].dotAddNode(dotLines);
+                    }
+                }
+
+
+                /** edges **/
+                this.head.dotAddEdges(dotLines);
+                for (let c = 0; c < this.M[0].length; c++) {
+                    this.columnNodes[c].dotAddEdges(dotLines);
+                }
+
+
+                for (let c = 0; c < this.M[0].length; c++) {
+                    for (let l = 0; l < this.M.length; l++) {
+                        if (this.M[l][c]) {
+                            this.M[l][c].dotAddEdges(dotLines);
+                        }
+                    }
+                }
+
+                dotLines.push("}");
+
+                return dotLines.join('\n');
+            }
+
+
+
+
+            coverColumn(node) {
+                node.right.left = node.left;
+                node.left.right = node.right;
+                node.cover = true;
+
+                for (let i = node.down; i != node; i = i.down) {
+                    i.cover = true;
+                    for (let j = i.right; j != i; j = j.right) {
+                        j.down.up = j.up;
+                        j.up.down = j.down;
+                        j.cover = true;
+                    }
+
+                }
+
+            }
+
+
+
+            uncoverColumn(node) {
+                for (let i = node.up; i != node; i = i.up) {
+                    i.cover = false;
+                    for (let j = i.left; j != i; j = j.left) {
+                        j.down.up = j;
+                        j.up.down = j;
+                        j.cover = false;
+                    }
+                }
+
+                node.right.left = node;
+                node.left.right = node;
+                node.cover = false;
+
+            }
+        }
+
+        const DL = new DancingList(
+            [[1, 0, 0, 1, 0, 0, 1],
+            [1, 0, 0, 1, 0, 0, 0],
+            [0, 0, 0, 1, 1, 0, 1],
+            [0, 0, 1, 0, 1, 1, 0],
+            [0, 1, 1, 0, 0, 1, 1],
+            [0, 1, 0, 0, 0, 0, 1]]);
+
+        //    DL.coverColumn(DL.head.right);
+
+
+        let dotLines = DL.toDot();
+
+
+
+        const graphviz = d3.select("#graph").graphviz()
+            .engine("neato")
+            //  .options({ "splines": "true" })
+            .transition(function () {
+                return d3.transition("main")
+                    .ease(d3.easeLinear)
+                    .delay(0)
+                    .duration(1000);
+            })
+            .logEvents(true)
+            .on("initEnd", update);
+
+
+
+        function update() {
+            const dot = DL.toDot();
+            console.log(dot)
+            graphviz.renderDot(dot)
+                .on("end", () => {
+                    for (let c = 0; c < DL.columnNodes.length; c++) {
+                        const toggleCover = () => {
+                            const cNode = DL.columnNodes[c];
+                            if (cNode.cover)
+                                DL.uncoverColumn(cNode);
+                            else
+                                DL.coverColumn(cNode);
+                            update();
+                        }
+                        document.getElementById("node" + (c + 2)).onclick = toggleCover;
+
+                    }
+                });
+        }
+
+        function cover(ic) {
+            DL.coverColumn(DL.columnNodes[ic - 1]);
+            update();
+        }
+
+        function uncover(ic) {
+            DL.uncoverColumn(DL.columnNodes[ic - 1]);
+            update();
+        }
+
+
+
+
+
+    </script>
